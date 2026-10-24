@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using EFT.InventoryLogic;
 using EFT.UI;
@@ -10,7 +11,7 @@ using UnityEngine;
 
 namespace CategorySearchShortcut;
 
-[BepInPlugin("com.musicmaniac.categorysearchshortcut", "Category Search Shortcut", "1.0.0")]
+[BepInPlugin("com.musicmaniac.categorysearchshortcut", "Category Search Shortcut", "1.1.0")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private static readonly FieldInfo InventoryScreenItemContext = AccessTools.Field(typeof(InventoryScreen), "_itemContext");
@@ -21,6 +22,7 @@ public sealed class Plugin : BaseUnityPlugin
     private static readonly FieldInfo FilterTabGroup = AccessTools.Field(typeof(FilterPanel), "_tabs");
     private static readonly FieldInfo FilterTabsByType = AccessTools.Field(typeof(FilterPanel), "_filterTabTypes");
     private static ManualLogSource? _log;
+    private static ConfigEntry<bool>? _alwaysSelectable;
     private static bool _openingSearch;
     private static FilterPanel? _sourcePanelForSearch;
     private static FilterTab? _sourceTabForSearch;
@@ -29,6 +31,11 @@ public sealed class Plugin : BaseUnityPlugin
     private void Awake()
     {
         _log = Logger;
+        _alwaysSelectable = Config.Bind(
+            "Stash Categories",
+            "AlwaysSelectable",
+            true,
+            "Keep character stash category buttons clickable even when matching items are only inside containers. Restart the game after changing this setting.");
         if (InventoryScreenItemContext == null || ItemUiEquipment == null ||
             SearchFilterPanel == null || SearchFilterRefresh == null ||
             ItemUiSearchWindow == null || FilterTabGroup == null || FilterTabsByType == null)
@@ -45,7 +52,25 @@ public sealed class Plugin : BaseUnityPlugin
         harmony.Patch(
             AccessTools.Method(typeof(UIInputNode), nameof(UIInputNode.Close)),
             postfix: new HarmonyMethod(typeof(Plugin), nameof(AfterWindowClose)));
+        harmony.Patch(
+            AccessTools.Method(typeof(FilterTab), nameof(FilterTab.SetInteractable)),
+            prefix: new HarmonyMethod(typeof(Plugin), nameof(BeforeSetInteractable)));
         Logger.LogInfo("Category Search Shortcut loaded.");
+    }
+
+    private static void BeforeSetInteractable(FilterTab __instance, ref bool active)
+    {
+        if (active || _alwaysSelectable?.Value != true ||
+            __instance.GetComponentInParent<StashSearchWindow>(true) != null)
+        {
+            return;
+        }
+
+        if (__instance.GetComponentInParent<SimpleStashPanel>(true) != null &&
+            __instance.GetComponentInParent<InventoryScreen>(true) != null)
+        {
+            active = true;
+        }
     }
 
     private static void BeforeTabClick(Tab __instance, out bool __state)
