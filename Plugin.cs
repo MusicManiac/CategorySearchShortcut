@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace CategorySearchShortcut;
 
-[BepInPlugin("com.musicmaniac.categorysearchshortcut", "Category Search Shortcut", "1.2.0")]
+[BepInPlugin("com.musicmaniac.categorysearchshortcut", "Category Search Shortcut", "1.2.1")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private static readonly FieldInfo InventoryScreenItemContext = AccessTools.Field(typeof(InventoryScreen), "_itemContext");
@@ -191,6 +191,12 @@ public sealed class Plugin : BaseUnityPlugin
                 if (tabGroup != null && tabs != null && tabs.TryGetValue(filter.Type, out var tab))
                 {
                     tabGroup.Show(tab, true);
+                    // TabGroup selects the new tab without clearing All's visual state.
+                    if (tabs.TryGetValue(FilterPanel.EFilterItemType.All, out var allTab) &&
+                        !ReferenceEquals(allTab, tab))
+                    {
+                        allTab.UpdateVisual(false, false);
+                    }
                     // Filter selection clears the window's pending tab refresh.
                     // Restore it so the game enables every category found in the stash.
                     SearchFilterRefresh.SetValue(searchWindow, true);
