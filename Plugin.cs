@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace CategorySearchShortcut;
 
-[BepInPlugin("com.musicmaniac.categorysearchshortcut", "Category Search Shortcut", "1.2.1")]
+[BepInPlugin("com.musicmaniac.categorysearchshortcut", "Category Search Shortcut", "1.2.2")]
 public sealed class Plugin : BaseUnityPlugin
 {
     private static readonly FieldInfo InventoryScreenItemContext = AccessTools.Field(typeof(InventoryScreen), "_itemContext");
@@ -31,9 +31,6 @@ public sealed class Plugin : BaseUnityPlugin
     private static ManualLogSource? _log;
     private static ConfigEntry<bool>? _alwaysSelectable;
     private static bool _openingSearch;
-    private static FilterPanel? _sourcePanelForSearch;
-    private static FilterTab? _sourceTabForSearch;
-    private static StashSearchWindow? _openedSearchWindow;
     private static TraderDealScreen? _currentTraderScreen;
 
     private void Awake()
@@ -60,9 +57,6 @@ public sealed class Plugin : BaseUnityPlugin
             AccessTools.Method(typeof(Tab), nameof(Tab.OnPointerClick)),
             prefix: new HarmonyMethod(typeof(Plugin), nameof(BeforeTabClick)),
             postfix: new HarmonyMethod(typeof(Plugin), nameof(AfterTabClick)));
-        harmony.Patch(
-            AccessTools.Method(typeof(UIInputNode), nameof(UIInputNode.Close)),
-            postfix: new HarmonyMethod(typeof(Plugin), nameof(AfterWindowClose)));
         harmony.Patch(
             AccessTools.Method(typeof(FilterTab), nameof(FilterTab.SetInteractable)),
             prefix: new HarmonyMethod(typeof(Plugin), nameof(BeforeSetInteractable)));
@@ -115,7 +109,9 @@ public sealed class Plugin : BaseUnityPlugin
 
     private static void BeforeTabClick(Tab __instance, out bool __state)
     {
-        __state = __instance is FilterTab && __instance.CanHandlePointerClick;
+        // An already selected tab is still a valid shortcut click, although vanilla
+        // CanHandlePointerClick returns false for it.
+        __state = __instance is FilterTab && __instance.Interactable;
     }
 
     private static void AfterTabClick(Tab __instance, bool __state)
@@ -180,7 +176,9 @@ public sealed class Plugin : BaseUnityPlugin
         try
         {
             _openingSearch = true;
-            ui.ShowStashSearchWindow(itemContext, equipment);
+            var searchContext = ui.ShowStashSearchWindow(itemContext, equipment);
+            var clickedTab = (FilterTab)__instance;
+            searchContext.OnClose += () => ResetSourcePanel(sourcePanel!, clickedTab);
 
             var searchPanel = SearchFilterPanel.GetValue(searchWindow) as FilterPanel;
             if (searchPanel != null)
@@ -200,9 +198,6 @@ public sealed class Plugin : BaseUnityPlugin
                     // Filter selection clears the window's pending tab refresh.
                     // Restore it so the game enables every category found in the stash.
                     SearchFilterRefresh.SetValue(searchWindow, true);
-                    _sourcePanelForSearch = sourcePanel;
-                    _sourceTabForSearch = (FilterTab)__instance;
-                    _openedSearchWindow = searchWindow;
                 }
             }
         }
@@ -216,20 +211,8 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
-    private static void AfterWindowClose(UIInputNode __instance)
+    private static void ResetSourcePanel(FilterPanel sourcePanel, FilterTab sourceTab)
     {
-        if (__instance is not StashSearchWindow window ||
-            !ReferenceEquals(window, _openedSearchWindow))
-        {
-            return;
-        }
-
-        var sourcePanel = _sourcePanelForSearch;
-        var sourceTab = _sourceTabForSearch;
-        _sourcePanelForSearch = null;
-        _sourceTabForSearch = null;
-        _openedSearchWindow = null;
-
         if (sourcePanel == null)
         {
             return;
